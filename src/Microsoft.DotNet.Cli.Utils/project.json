@@ -6,10 +6,10 @@
   },
   "dependencies": {
     "Microsoft.DotNet.ProjectModel": { "target": "project" },
-    "NuGet.Versioning": "3.5.0-rc-1285",
-    "NuGet.Packaging": "3.5.0-rc-1285",
-    "NuGet.Frameworks": "3.5.0-rc-1285",
-    "NuGet.ProjectModel": "3.5.0-rc-1285"
+    "NuGet.Versioning": "3.5.0-rc-914",
+    "NuGet.Packaging": "3.5.0-rc-914",
+    "NuGet.Frameworks": "3.5.0-rc-914",
+    "NuGet.ProjectModel": "3.5.0-rc-914"
   },
   "frameworks": {
     "net451": {
