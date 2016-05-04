@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using Microsoft.DotNet.ProjectModel.Utilities;
 using Microsoft.DotNet.ProjectModel.FileSystemGlobbing;
+using Microsoft.DotNet.ProjectModel.FileSystemGlobbing.Abstractions;
 
 namespace Microsoft.DotNet.ProjectModel.Files
 {
@@ -56,7 +57,6 @@ namespace Microsoft.DotNet.ProjectModel.Files
                     context.IncludePatterns,
                     context.ExcludePatterns,
                     context.IncludeFiles,
-                    context.ExcludeFiles,
                     context.BuiltInsInclude,
                     context.BuiltInsExclude);
 
@@ -74,27 +74,65 @@ namespace Microsoft.DotNet.ProjectModel.Files
                 }
                 else if (isFile && files.Any())
                 {
-                    includeEntries.Add(new IncludeEntry(targetBasePath, files.First()));
+                    includeEntries.Add(
+                        new IncludeEntry(
+                            targetBasePath,
+                            Path.GetFullPath(
+                                Path.Combine(sourceBasePath, PathUtility.GetPathWithDirectorySeparator(files.First().Path)))));
                 }
-                else
+                else if (!isFile)
                 {
                     targetBasePath = targetBasePath.Substring(0, targetBasePath.Length - 1);
 
                     foreach (var file in files)
                     {
+                        var fullPath = Path.GetFullPath(
+                            Path.Combine(sourceBasePath, PathUtility.GetPathWithDirectorySeparator(file.Path)));
                         string targetPath = null;
 
                         if (flatten)
                         {
-                            targetPath = Path.Combine(targetBasePath, Path.GetFileName(file));
+                            targetPath = Path.Combine(targetBasePath, PathUtility.GetPathWithDirectorySeparator(file.Stem));
                         }
                         else
                         {
-                            targetPath = Path.Combine(targetBasePath, PathUtility.GetRelativePath(sourceBasePath, file));
+                            targetPath = Path.Combine(targetBasePath, PathUtility.GetRelativePath(sourceBasePath, fullPath));
                         }
 
-                        includeEntries.Add(new IncludeEntry(targetPath, file));
+                        includeEntries.Add(new IncludeEntry(targetPath, fullPath));
                     }
+                }
+
+                if (context.IncludeFiles != null)
+                {
+                    foreach (var literalRelativePath in context.IncludeFiles)
+                    {
+                        var fullPath = Path.GetFullPath(Path.Combine(sourceBasePath, literalRelativePath));
+                        string targetPath = null;
+
+                        if (isFile)
+                        {
+                            targetPath = targetBasePath;
+                        }
+                        else if (flatten)
+                        {
+                            targetPath =  Path.Combine(targetBasePath, Path.GetFileName(fullPath));
+                        }
+                        else
+                        {
+                            targetPath = Path.Combine(targetBasePath, PathUtility.GetRelativePath(sourceBasePath, fullPath));
+                        }
+
+                        includeEntries.Add(new IncludeEntry(targetPath, fullPath));
+                    }
+                }
+
+                if (context.ExcludeFiles != null)
+                {
+                    var literalExcludedFiles = context.ExcludeFiles.Select(
+                        file => Path.GetFullPath(Path.Combine(sourceBasePath, file)));
+
+                    includeEntries.RemoveWhere(entry => literalExcludedFiles.Contains(entry.SourcePath));
                 }
             }
             
@@ -105,7 +143,7 @@ namespace Microsoft.DotNet.ProjectModel.Files
                 {
                     var targetPath = Path.Combine(targetBasePath, PathUtility.GetPathWithDirectorySeparator(map.Key));
 
-                    foreach (var file in GetIncludeFiles(map.Value, targetPath, diagnostics, flatten))
+                    foreach (var file in GetIncludeFiles(map.Value, targetPath, diagnostics, flatten: true))
                     {
                         file.IsCustomTarget = true;
 
@@ -119,12 +157,11 @@ namespace Microsoft.DotNet.ProjectModel.Files
             return includeEntries;
         }
 
-        private static IEnumerable<string> GetIncludeFilesCore(
+        private static IEnumerable<FilePatternMatch> GetIncludeFilesCore(
             string sourceBasePath,
             List<string> includePatterns,
             List<string> excludePatterns,
             List<string> includeFiles,
-            List<string> excludeFiles,
             List<string> builtInsInclude,
             List<string> builtInsExclude)
         {
@@ -167,16 +204,7 @@ namespace Microsoft.DotNet.ProjectModel.Files
                 matcher.AddExcludePatterns(excludePatterns);
             }
 
-            var files = matcher.GetResultsInFullPath(sourceBasePath);
-            files = files.Concat(literalIncludedFiles).Distinct();
-
-            if (files.Any() && excludeFiles != null)
-            {
-                var literalExcludedFiles = excludeFiles.Select(file => Path.GetFullPath(Path.Combine(sourceBasePath, file)));
-                files = files.Except(literalExcludedFiles);
-            }
-
-            return files;
+            return matcher.Execute(new DirectoryInfoWrapper(new DirectoryInfo(sourceBasePath))).Files;
         }
     }
 }
