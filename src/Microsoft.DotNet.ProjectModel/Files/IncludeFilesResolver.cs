@@ -96,7 +96,9 @@ namespace Microsoft.DotNet.ProjectModel.Files
                         }
                         else
                         {
-                            targetPath = Path.Combine(targetBasePath, PathUtility.GetRelativePath(sourceBasePath, fullPath));
+                            targetPath = Path.Combine(
+                                targetBasePath,
+                                PathUtility.GetRelativePathIgnoringDirectoryTraversals(sourceBasePath, fullPath));
                         }
 
                         includeEntries.Add(new IncludeEntry(targetPath, fullPath));
