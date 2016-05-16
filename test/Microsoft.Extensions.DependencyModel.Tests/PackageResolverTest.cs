@@ -53,10 +53,7 @@ namespace Microsoft.Extensions.DependencyModel.Tests
         [Fact]
         public void ResolvesAllAssemblies()
         {
-            var packagePath = Path.Combine(
-                PackagesPath,
-                F.DefaultPackageName.ToLowerInvariant(),
-                F.DefaultVersion.ToLowerInvariant());
+            var packagePath = GetPackagesPath(F.DefaultPackageName, F.DefaultVersion);
             var fileSystem = FileSystemMockBuilder.Create()
                 .AddFiles(packagePath, F.TwoAssemblies)
                 .Build();
@@ -76,10 +73,7 @@ namespace Microsoft.Extensions.DependencyModel.Tests
         [Fact]
         public void FailsWhenOneOfAssembliesNotFound()
         {
-            var packagePath = Path.Combine(
-                PackagesPath,
-                F.DefaultPackageName.ToLowerInvariant(),
-                F.DefaultVersion.ToLowerInvariant());
+            var packagePath = GetPackagesPath(F.DefaultPackageName, F.DefaultVersion);
             var fileSystem = FileSystemMockBuilder.Create()
                 .AddFiles(packagePath, F.DefaultAssemblyPath)
                 .Build();
@@ -92,6 +86,11 @@ namespace Microsoft.Extensions.DependencyModel.Tests
             exception.Message.Should()
                 .Contain(F.SecondAssemblyPath)
                 .And.Contain(library.Name);
+        }
+
+        private static string GetPackagesPath(string id, string version)
+        {
+            return Path.Combine(PackagesPath, id.ToLowerInvariant(), version.ToLowerInvariant());
         }
     }
 }

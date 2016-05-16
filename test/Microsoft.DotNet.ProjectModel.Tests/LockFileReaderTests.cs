@@ -16,7 +16,7 @@ namespace Microsoft.DotNet.ProjectModel.Tests
         [InlineData("", null)]
         [InlineData(@"""path"": null,", null)]
         [InlineData(@"""path"": ""foo/1.0.0"",", "foo/1.0.0")]
-        public void AllowsPackageLibraryPath(string pathProperty, string expected)
+        public void SupportsTheOptionalPathPropertyOfALibraryPackage(string pathProperty, string expected)
         {
             // Arrange
             var reader = new LockFileReader();
