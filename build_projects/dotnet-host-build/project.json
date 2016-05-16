@@ -1,7 +1,7 @@
 {
   "version": "1.0.0-*",
   "description": "Build scripts for dotnet-cli",
-  "compilationOptions": {
+  "buildOptions": {
     "emitEntryPoint": true
   },
   "dependencies": {
@@ -15,7 +15,6 @@
 
     "Microsoft.DotNet.Cli.Build.Framework": {"target":"project"},
     "shared-build-targets-utils": {"target": "project"}
-
   },
   "frameworks": {
     "netcoreapp1.0": {
