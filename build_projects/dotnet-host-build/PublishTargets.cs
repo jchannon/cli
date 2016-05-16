@@ -8,10 +8,10 @@ using System.Text.RegularExpressions;
 using Microsoft.DotNet.Cli.Build.Framework;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
-
+using Microsoft.DotNet.Cli.Build;
 using static Microsoft.DotNet.Cli.Build.Framework.BuildHelpers;
 
-namespace Microsoft.DotNet.Cli.Build
+namespace Microsoft.DotNet.Host.Build
 {
     public static class PublishTargets
     {
@@ -40,7 +40,6 @@ namespace Microsoft.DotNet.Cli.Build
         [Target(nameof(PrepareTargets.Init),
         nameof(PublishTargets.InitPublish),
         nameof(PublishTargets.PublishArtifacts),
-        nameof(PublishTargets.TriggerDockerHubBuilds),
         nameof(PublishTargets.FinalizeBuild))]
         [Environment("PUBLISH_TO_AZURE_BLOB", "1", "true")] // This is set by CI systems
         public static BuildTargetResult Publish(BuildTargetContext c)
@@ -133,7 +132,7 @@ namespace Microsoft.DotNet.Cli.Build
                  { "CentOS_x64", false }
              };
 
-            List<string> blobs = new List<string>(AzurePublisherTool.ListBlobs($"{Channel}/Binaries/{CliNuGetVersion}/"));
+            List<string> blobs = new List<string>(AzurePublisherTool.ListBlobs($"{Channel}/Binaries/{SharedFrameworkNugetVersion}/"));
 
             var config = Environment.GetEnvironmentVariable("CONFIGURATION");
             var versionBadgeName = $"{CurrentPlatform.Current}_{CurrentArchitecture.Current}";

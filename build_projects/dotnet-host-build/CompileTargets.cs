@@ -16,7 +16,12 @@ namespace Microsoft.DotNet.Host.Build
 {
     public class CompileTargets
     {
+        public static readonly string CoreCLRVersion = "1.0.2-rc2-24027";
+
         public static readonly bool IsWinx86 = CurrentPlatform.IsWindows && CurrentArchitecture.Isx86;
+        public const string SharedFrameworkName = "Microsoft.NETCore.App";
+
+        public static Crossgen CrossgenUtil = new Crossgen(CoreCLRVersion);
 
         public static string HostPackagePlatformRid => HostPackageSupportedRids[
                              (RuntimeEnvironment.OperatingSystemPlatform == Platform.Windows)
@@ -44,7 +49,8 @@ namespace Microsoft.DotNet.Host.Build
 
         [Target(nameof(PrepareTargets.Init), 
             nameof(CompileCoreHost), 
-            nameof(PackagePkgProjects))]
+            nameof(PackagePkgProjects),
+            nameof(PublishSharedFramework))]
         public static BuildTargetResult Compile(BuildTargetContext c)
         {
             return c.Success();
@@ -227,6 +233,203 @@ namespace Microsoft.DotNet.Host.Build
                 }
             }
             return c.Success();
+        }
+
+        [Target]
+        public static BuildTargetResult PublishSharedFramework(BuildTargetContext c)
+        {
+            var outputDir = Dirs.Stage2;
+            var dotnetCli = DotNetCli.Stage0;
+
+            string SharedFrameworkTemplateSourceRoot = Path.Combine(Dirs.RepoRoot, "src", "sharedframework", "framework");
+            string SharedFrameworkNugetVersion = c.BuildContext.Get<string>("SharedFrameworkNugetVersion");
+
+            string sharedFrameworkRid;
+            if (RuntimeEnvironment.OperatingSystemPlatform == Platform.Windows)
+            {
+                sharedFrameworkRid = $"win7-{RuntimeEnvironment.RuntimeArchitecture}";
+            }
+            else
+            {
+                sharedFrameworkRid = RuntimeEnvironment.GetRuntimeIdentifier();
+            }
+
+            string SharedFrameworkSourceRoot = GenerateSharedFrameworkProject(c, SharedFrameworkTemplateSourceRoot, sharedFrameworkRid);
+
+            dotnetCli.Restore(
+                "--verbosity", "verbose",
+                "--disable-parallel",
+                "--infer-runtimes",
+                "--fallbacksource", Dirs.CorehostLocalPackages)
+                .WorkingDirectory(SharedFrameworkSourceRoot)
+                .Execute()
+                .EnsureSuccessful();
+
+            // We publish to a sub folder of the PublishRoot so tools like heat and zip can generate folder structures easier.
+            string SharedFrameworkNameAndVersionRoot = Path.Combine(outputDir, "shared", SharedFrameworkName, SharedFrameworkNugetVersion);
+            c.BuildContext["SharedFrameworkPath"] = SharedFrameworkNameAndVersionRoot;
+
+            if (Directory.Exists(SharedFrameworkNameAndVersionRoot))
+            {
+                Utils.DeleteDirectory(SharedFrameworkNameAndVersionRoot);
+            }
+
+            dotnetCli.Publish(
+                "--output", SharedFrameworkNameAndVersionRoot,
+                "-r", sharedFrameworkRid,
+                SharedFrameworkSourceRoot).Execute().EnsureSuccessful();
+
+            // Clean up artifacts that dotnet-publish generates which we don't need
+            DeleteMainPublishOutput(SharedFrameworkNameAndVersionRoot, "framework");
+            File.Delete(Path.Combine(SharedFrameworkNameAndVersionRoot, "framework.runtimeconfig.json"));
+
+            // Rename the .deps file
+            var destinationDeps = Path.Combine(SharedFrameworkNameAndVersionRoot, $"{SharedFrameworkName}.deps.json");
+            File.Move(Path.Combine(SharedFrameworkNameAndVersionRoot, "framework.deps.json"), destinationDeps);
+            ChangeEntryPointLibraryName(destinationDeps, null);
+
+            // Generate RID fallback graph
+            string runtimeGraphGeneratorRuntime = null;
+            switch (RuntimeEnvironment.OperatingSystemPlatform)
+            {
+                case Platform.Windows:
+                    runtimeGraphGeneratorRuntime = "win";
+                    break;
+                case Platform.Linux:
+                    runtimeGraphGeneratorRuntime = "linux";
+                    break;
+                case Platform.Darwin:
+                    runtimeGraphGeneratorRuntime = "osx";
+                    break;
+            }
+            if (!string.IsNullOrEmpty(runtimeGraphGeneratorRuntime))
+            {
+                var runtimeGraphGeneratorName = "RuntimeGraphGenerator";
+                var runtimeGraphGeneratorProject = Path.Combine(Dirs.RepoRoot, "tools", runtimeGraphGeneratorName);
+                var runtimeGraphGeneratorOutput = Path.Combine(Dirs.Output, "tools", runtimeGraphGeneratorName);
+
+                dotnetCli.Publish(
+                    "--output", runtimeGraphGeneratorOutput,
+                    runtimeGraphGeneratorProject).Execute().EnsureSuccessful();
+                var runtimeGraphGeneratorExe = Path.Combine(runtimeGraphGeneratorOutput, $"{runtimeGraphGeneratorName}{Constants.ExeSuffix}");
+
+                Cmd(runtimeGraphGeneratorExe, "--project", SharedFrameworkSourceRoot, "--deps", destinationDeps, runtimeGraphGeneratorRuntime)
+                    .Execute()
+                    .EnsureSuccessful();
+            }
+            else
+            {
+                c.Error($"Could not determine rid graph generation runtime for platform {RuntimeEnvironment.OperatingSystemPlatform}");
+            }
+
+            File.Copy(
+                Path.Combine(Dirs.CorehostLocked, DotnetHostBaseName),
+                Path.Combine(SharedFrameworkNameAndVersionRoot, DotnetHostBaseName), true);
+            File.Copy(
+               Path.Combine(Dirs.CorehostLocked, DotnetHostBaseName),
+               Path.Combine(SharedFrameworkNameAndVersionRoot, $"corehost{Constants.ExeSuffix}"), true);
+            File.Copy(
+                Path.Combine(Dirs.CorehostLocked, DotnetHostFxrBaseName),
+                Path.Combine(SharedFrameworkNameAndVersionRoot, DotnetHostFxrBaseName), true);
+
+            // Hostpolicy should be the latest and not the locked version as it is supposed to evolve for
+            // the framework and has a tight coupling with coreclr's API in the framework.
+            File.Copy(
+                Path.Combine(Dirs.CorehostLatest, HostPolicyBaseName),
+                Path.Combine(SharedFrameworkNameAndVersionRoot, HostPolicyBaseName), true);
+
+            if (File.Exists(Path.Combine(SharedFrameworkNameAndVersionRoot, "mscorlib.ni.dll")))
+            {
+                // Publish already places the crossgen'd version of mscorlib into the output, so we can
+                // remove the IL version
+                File.Delete(Path.Combine(SharedFrameworkNameAndVersionRoot, "mscorlib.dll"));
+            }
+
+            CrossgenUtil.CrossgenDirectory(c, SharedFrameworkNameAndVersionRoot);
+
+            // Generate .version file for sharedfx
+            var version = SharedFrameworkNugetVersion;
+            var content = $@"{c.BuildContext["CommitHash"]}{Environment.NewLine}{version}{Environment.NewLine}";
+            File.WriteAllText(Path.Combine(SharedFrameworkNameAndVersionRoot, ".version"), content);
+
+            return c.Success();
+        }
+
+        /// <summary>
+        /// Generates the real shared framework project that will get published.
+        /// </summary>
+        /// <param name="sharedFrameworkTemplatePath">The "sharedFramework" source template folder.</param>
+        private static string GenerateSharedFrameworkProject(BuildTargetContext c, string sharedFrameworkTemplatePath, string rid)
+        {
+            string sharedFrameworkProjectPath = Path.Combine(Dirs.Intermediate, "sharedFramework", "framework");
+            Utils.DeleteDirectory(sharedFrameworkProjectPath);
+            CopyRecursive(sharedFrameworkTemplatePath, sharedFrameworkProjectPath, true);
+
+            string templateFile = Path.Combine(sharedFrameworkProjectPath, "project.json.template");
+            JObject sharedFrameworkProject = JsonUtils.ReadProject(templateFile);
+            sharedFrameworkProject["dependencies"]["Microsoft.NETCore.App"] = c.BuildContext.Get<string>("SharedFrameworkNugetVersion");
+            ((JObject)sharedFrameworkProject["runtimes"]).RemoveAll();
+            sharedFrameworkProject["runtimes"][rid] = new JObject();
+
+            string projectJsonPath = Path.Combine(sharedFrameworkProjectPath, "project.json");
+            JsonUtils.WriteProject(sharedFrameworkProject, projectJsonPath);
+
+            Rm(templateFile);
+
+            return sharedFrameworkProjectPath;
+        }
+
+        private static void ChangeEntryPointLibraryName(string depsFile, string newName)
+        {
+            JToken deps;
+            using (var file = File.OpenText(depsFile))
+            using (JsonTextReader reader = new JsonTextReader(file))
+            {
+                deps = JObject.ReadFrom(reader);
+            }
+
+            string version = null;
+            foreach (JProperty target in deps["targets"])
+            {
+                var targetLibrary = target.Value.Children<JProperty>().FirstOrDefault();
+                if (targetLibrary == null)
+                {
+                    continue;
+                }
+                version = targetLibrary.Name.Substring(targetLibrary.Name.IndexOf('/') + 1);
+                if (newName == null)
+                {
+                    targetLibrary.Remove();
+                }
+                else
+                {
+                    targetLibrary.Replace(new JProperty(newName + '/' + version, targetLibrary.Value));
+                }
+            }
+            if (version != null)
+            {
+                var library = deps["libraries"].Children<JProperty>().First();
+                if (newName == null)
+                {
+                    library.Remove();
+                }
+                else
+                {
+                    library.Replace(new JProperty(newName + '/' + version, library.Value));
+                }
+                using (var file = File.CreateText(depsFile))
+                using (var writer = new JsonTextWriter(file) { Formatting = Formatting.Indented })
+                {
+                    deps.WriteTo(writer);
+                }
+            }
+        }
+
+        private static void DeleteMainPublishOutput(string path, string name)
+        {
+            File.Delete(Path.Combine(path, $"{name}{Constants.ExeSuffix}"));
+            File.Delete(Path.Combine(path, $"{name}.dll"));
+            File.Delete(Path.Combine(path, $"{name}.pdb"));
         }
     }
 }

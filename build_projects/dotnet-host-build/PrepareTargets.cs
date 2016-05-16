@@ -31,7 +31,12 @@ namespace Microsoft.DotNet.Host.Build
         public static BuildTargetResult CheckCoreclrPlatformDependencies(BuildTargetContext c) => c.Success();
 
         // All major targets will depend on this in order to ensure variables are set up right if they are run independently
-        [Target(nameof(GenerateVersions), nameof(CheckPrereqs), nameof(LocateStage0), nameof(ExpectedBuildArtifacts))]
+        [Target(
+            nameof(GenerateVersions), 
+            nameof(CheckPrereqs), 
+            nameof(LocateStage0), 
+            nameof(ExpectedBuildArtifacts),
+            nameof(RestorePackages))]
         public static BuildTargetResult Init(BuildTargetContext c)
         {
             var configEnv = Environment.GetEnvironmentVariable("CONFIGURATION");
@@ -72,8 +77,20 @@ namespace Microsoft.DotNet.Host.Build
                 CommitCount = commitCount
             };
 
+            var branchInfo = new BranchInfo(Dirs.RepoRoot);
+            var buildVersion = new BuildVersion()
+            {
+                Major = int.Parse(branchInfo.Entries["MAJOR_VERSION"]),
+                Minor = int.Parse(branchInfo.Entries["MINOR_VERSION"]),
+                Patch = int.Parse(branchInfo.Entries["PATCH_VERSION"]),
+                ReleaseSuffix = branchInfo.Entries["RELEASE_SUFFIX"],
+                CommitCount = commitCount
+            };
+
             c.BuildContext["HostVersion"] = hostVersion;
             c.BuildContext["CommitHash"] = commitHash;
+            c.BuildContext["SharedFrameworkNugetVersion"] = buildVersion.NetCoreAppVersion;
+
 
             c.Info($"Building Version: {hostVersion.LatestHostVersionNoSuffix} (NuGet Packages: {hostVersion.LatestHostVersion})");
             c.Info($"From Commit: {commitHash}");
@@ -113,7 +130,6 @@ namespace Microsoft.DotNet.Host.Build
             var versionBadgeName = $"sharedfx_{CurrentPlatform.Current}_{CurrentArchitecture.Current}_{config}_version_badge.svg";
             c.BuildContext["VersionBadge"] = Path.Combine(Dirs.Output, versionBadgeName);
 
-            var cliVersion = c.BuildContext.Get<BuildVersion>("BuildVersion").NuGetVersion;
             var sharedFrameworkVersion = c.BuildContext.Get<string>("SharedFrameworkNugetVersion");
             var hostVersion = c.BuildContext.Get<HostVersion>("HostVersion").LockedHostVersion;
             
@@ -211,6 +227,19 @@ namespace Microsoft.DotNet.Host.Build
             {
                 return c.Failed(errorMessageBuilder.ToString());
             }
+        }
+
+        [Target]
+        public static BuildTargetResult RestorePackages(BuildTargetContext c)
+        {
+            var dotnet = DotNetCli.Stage0;
+
+            dotnet.Restore("--verbosity", "verbose", "--disable-parallel", "--infer-runtimes")
+                .WorkingDirectory(Path.Combine(c.BuildContext.BuildDirectory, "tools"))
+                .Execute()
+                .EnsureSuccessful();
+
+            return c.Success();
         }
 
         [Target]
