@@ -26,17 +26,11 @@ namespace Microsoft.DotNet.Host.Build
             }
         }
 
-        private static string SdkMsi { get; set; }
-
-        private static string SdkBundle { get; set; }
-
         private static string SharedHostMsi { get; set; }
 
         private static string SharedFrameworkMsi { get; set; }
 
         private static string SharedFrameworkBundle { get; set; }
-
-        private static string SdkEngine { get; set; }
 
         private static string SharedFrameworkEngine { get; set; }
 
@@ -82,9 +76,6 @@ namespace Microsoft.DotNet.Host.Build
         [BuildPlatforms(BuildPlatform.Windows)]
         public static BuildTargetResult InitMsi(BuildTargetContext c)
         {
-            SdkBundle = c.BuildContext.Get<string>("CombinedFrameworkSDKHostInstallerFile");
-            SdkMsi = Path.ChangeExtension(SdkBundle, "msi");
-            SdkEngine = GetEngineName(SdkBundle);
 
             SharedFrameworkBundle = c.BuildContext.Get<string>("CombinedFrameworkHostInstallerFile");
             SharedHostMsi = Path.ChangeExtension(c.BuildContext.Get<string>("SharedHostInstallerFile"), "msi");

@@ -87,6 +87,7 @@ namespace Microsoft.DotNet.Host.Build
                 CommitCount = commitCount
             };
 
+            c.BuildContext["BuildVersion"] = buildVersion;
             c.BuildContext["HostVersion"] = hostVersion;
             c.BuildContext["CommitHash"] = commitHash;
             c.BuildContext["SharedFrameworkNugetVersion"] = buildVersion.NetCoreAppVersion;
@@ -234,7 +235,7 @@ namespace Microsoft.DotNet.Host.Build
         {
             var dotnet = DotNetCli.Stage0;
 
-            dotnet.Restore("--verbosity", "verbose", "--disable-parallel", "--infer-runtimes")
+            dotnet.Restore("--verbosity", "verbose", "--disable-parallel", "--fallbacksource", Dirs.CorehostLocalPackages)
                 .WorkingDirectory(Path.Combine(c.BuildContext.BuildDirectory, "src"))
                 .Execute()
                 .EnsureSuccessful();
