@@ -61,16 +61,16 @@ namespace Microsoft.DotNet.ProjectModel.Utilities
         }
 
         /// <summary>
-        /// Returns path2 relative to path1, with Path.DirectorySeparatorChar as separator
+        /// Returns <paramref name="path2"/> relative to <paramref name="path1"/>, with Path.DirectorySeparatorChar as separator
         /// </summary>
         public static string GetRelativePath(string path1, string path2)
         {
-            return GetRelativePath(path1, path2, Path.DirectorySeparatorChar, true);
+            return GetRelativePath(path1, path2, Path.DirectorySeparatorChar, includeDirectoryTraversals: true);
         }
 
         /// <summary>
-        /// Returns path2 relative to path1, with Path.DirectorySeparatorChar as separator but ignoring directory
-        /// traversals.
+        /// Returns <paramref name="path2"/> relative to <paramref name="path1"/>, with <c>Path.DirectorySeparatorChar</c>
+        /// as separator but ignoring directory traversals.
         /// </summary>
         public static string GetRelativePathIgnoringDirectoryTraversals(string path1, string path2)
         {
@@ -78,7 +78,7 @@ namespace Microsoft.DotNet.ProjectModel.Utilities
         }
 
         /// <summary>
-        /// Returns path2 relative to path1, with given path separator
+        /// Returns <paramref name="path2"/> relative to <paramref name="path1"/>, with given path separator
         /// </summary>
         public static string GetRelativePath(string path1, string path2, char separator, bool includeDirectoryTraversals)
         {

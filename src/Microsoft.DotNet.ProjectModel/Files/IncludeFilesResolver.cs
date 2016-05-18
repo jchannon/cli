@@ -58,7 +58,7 @@ namespace Microsoft.DotNet.ProjectModel.Files
                     context.ExcludePatterns,
                     context.IncludeFiles,
                     context.BuiltInsInclude,
-                    context.BuiltInsExclude);
+                    context.BuiltInsExclude).ToList();
 
                 var isFile = targetBasePath[targetBasePath.Length - 1] != Path.DirectorySeparatorChar;
                 if (isFile && files.Count() > 1)
@@ -74,11 +74,10 @@ namespace Microsoft.DotNet.ProjectModel.Files
                 }
                 else if (isFile && files.Any())
                 {
-                    includeEntries.Add(
-                        new IncludeEntry(
-                            targetBasePath,
-                            Path.GetFullPath(
-                                Path.Combine(sourceBasePath, PathUtility.GetPathWithDirectorySeparator(files.First().Path)))));
+                    var filePath = Path.GetFullPath(
+                        Path.Combine(sourceBasePath, PathUtility.GetPathWithDirectorySeparator(files[0].Path)));
+
+                    includeEntries.Add(new IncludeEntry(targetBasePath, filePath));
                 }
                 else if (!isFile)
                 {
@@ -88,7 +87,7 @@ namespace Microsoft.DotNet.ProjectModel.Files
                     {
                         var fullPath = Path.GetFullPath(
                             Path.Combine(sourceBasePath, PathUtility.GetPathWithDirectorySeparator(file.Path)));
-                        string targetPath = null;
+                        string targetPath;
 
                         if (flatten)
                         {
@@ -110,7 +109,7 @@ namespace Microsoft.DotNet.ProjectModel.Files
                     foreach (var literalRelativePath in context.IncludeFiles)
                     {
                         var fullPath = Path.GetFullPath(Path.Combine(sourceBasePath, literalRelativePath));
-                        string targetPath = null;
+                        string targetPath;
 
                         if (isFile)
                         {
@@ -131,8 +130,9 @@ namespace Microsoft.DotNet.ProjectModel.Files
 
                 if (context.ExcludeFiles != null)
                 {
-                    var literalExcludedFiles = context.ExcludeFiles.Select(
-                        file => Path.GetFullPath(Path.Combine(sourceBasePath, file)));
+                    var literalExcludedFiles = new HashSet<string>(
+                        context.ExcludeFiles.Select(file => Path.GetFullPath(Path.Combine(sourceBasePath, file))),
+                        StringComparer.Ordinal);
 
                     includeEntries.RemoveWhere(entry => literalExcludedFiles.Contains(entry.SourcePath));
                 }
